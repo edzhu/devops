@@ -1,0 +1,3 @@
+[submodule ".modules/ops"]
+	path = .modules/ops
+	url = git@github.com:edzhu/devops_ops.git
