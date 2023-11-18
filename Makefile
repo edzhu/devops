@@ -21,20 +21,16 @@ export GIT_USER ?= ${USER}
 
 ifeq ($(ENV), ops)
 	export GCLOUD_LOCATION ?= us-central1  # regional cluster
-	export INGRESS_DOMAINS ?= refundhunter.com
 
 else ifeq ($(ENV), prd)
 	export GCLOUD_LOCATION ?= us-central1-c  # zonal cluster
-	export INGRESS_DOMAINS ?= refundhunter.com refundhunter.cn
 
 else ifeq ($(ENV), pre)
 	export GCLOUD_LOCATION ?= us-central1-f  # zonal cluster
-	export INGRESS_DOMAINS ?= refundhunter.com refundhunter.cn
 
 else
 	export ENV = dev
 	export GCLOUD_LOCATION ?= us-central1-b  # zonal cluster
-	export INGRESS_DOMAINS ?= refundhunter.com refundhunter.cn
 endif
 
 export GIT_SUFFIX ?= $(shell git rev-parse --abbrev-ref HEAD | awk -F- '{print $$2}' | sed 's|\([0-9]\)|-\1|')
@@ -62,6 +58,19 @@ clean:
 	@find . -name '*.egg-info' -type f -delete
 	@find . -name '*~' -type f -delete
 
-.PHONY: gcloud-init
-gcloud-init:
-	@rh_devops/gcloud-init.sh
+.PHONY: deploy
+deploy:
+	@deploy/deploy.sh
+
+.PHONY: shutdown
+shutdown:
+	@deploy/k8s-certman-destroy.sh
+	@deploy/k8s-nginx-destroy.sh
+
+.PHONY: deploy-gitlab
+deploy-gitlab:
+	@deploy/k8s-gitlab-create.sh
+
+.PHONY: shutdown-gitlab
+shutdown-gitlab:
+	@deploy/k8s-gitlab-destroy.sh

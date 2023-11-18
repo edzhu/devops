@@ -1,0 +1,218 @@
+#
+# REFUND HUNTER CONFIDENTIAL
+# __________________________
+#
+#  [2017] - [2023] Refund Hunter
+#  All Rights Reserved.
+#
+# NOTICE: All information contained herein is, and remains the property of Refund Hunter and its
+# suppliers, if any.  The intellectual and technical concepts contained herein are proprietary to
+# Refund Hunter and its suppliers and may be covered by U.S. and Foreign Patents, patents in
+# process, and are protected by trade secret or copyright law. Dissemination of this information or
+# reproduction of this material is strictly forbidden unless prior written permission is obtained
+# from Refund Hunter.
+#
+---
+global:
+  hosts:
+    domain: {{ domain }}
+    gitlab:
+      name: git.{{ domain }}
+    ssh: git.{{ domain }}
+  ingress:
+    configureCertmanager: false
+    enabled: true
+    class: nginx
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      cert-manager.io/cluster-issuer: letsencrypt
+      nginx.ingress.kubernetes.io/ssl-ciphers: "ALL:!aNULL:!EXPORT56:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP"
+      nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "1800"
+      nginx.ingress.kubernetes.io/configuration-snippet: |
+        add_header Cache-Control "no-cache";
+        proxy_cache_bypass $http_pragma;
+        proxy_cache_revalidate on;
+        expires off;
+  kas:
+    enabled: false
+
+gitlab:
+  webservice:
+    ingress:
+      tls:
+        secretName: {{ service_name }}--gitlab-tls
+    minReplicas: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 2Gi
+        ephemeral-storage: 0.5Gi
+      requests:
+        cpu: 500m
+        memory: 2Gi
+        ephemeral-storage: 0.5Gi
+    workhorse:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 0.5Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 0.5Gi
+  sidekiq:
+    minReplicas: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 2Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 500m
+        memory: 2Gi
+        ephemeral-storage: 1Gi
+  gitlab-shell:
+    minReplicas: 1
+  gitlab-exporter:
+    enabled: false
+  toolbox:
+    enabled: true
+    replicas: 1
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+  migrations:
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 0.5Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 0.5Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+        ephemeral-storage: 0.5Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+        ephemeral-storage: 0.5Gi
+
+minio:
+  persistence:
+    storageClass: regional-ssd
+    size: 5Gi
+  ingress:
+    tls:
+      secretName: {{ service_name }}--minio-tls
+  init:
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+  resources:
+    limits:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+    requests:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+
+redis:
+  resources:
+    limits:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+    requests:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+
+registry:
+  ingress:
+    tls:
+      secretName: {{ service_name }}--registry-tls
+  hpa:
+    minReplicas: 1
+  init:
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+  resources:
+    limits:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+    requests:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 1Gi
+
+shared-secrets:
+  resources:
+    limits:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 0.5Gi
+    requests:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 0.5Gi
+
+gitlab-runner:
+  resources:
+    limits:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 0.5Gi
+    requests:
+      cpu: 250m
+      memory: 0.5Gi
+      ephemeral-storage: 0.5Gi
+
+prometheus:
+  install: false
+
+nginx-ingress:
+  enabled: false
+
+certmanager:
+  install: false

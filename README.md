@@ -26,7 +26,7 @@ cloud-hosted VMs or physical machines added into the cluster via publicly access
 
 ### Cluster Naming Scheme
 
-The name of each cluster follow the general schema `<DOMAIN_PREFIX>``<ENVIRONMENT>``<TYPE_SUFFIX>`.
+The name of each cluster follow the general schema `<DOMAIN_PREFIX><ENVIRONMENT><TYPE_SUFFIX>`.
 `<DOMAIN_PREFIX>` is shorthand for the domain, in the case of Refund Hunter it is `rh-`.
 `<ENVIRONMENT>` is one of `ops`, `dev`, `pre`, or `prd`. `<TYPE_SUFFIX>` is either `-sm` for
 self-managed cluster or empty string for cloud-hosted cluster.

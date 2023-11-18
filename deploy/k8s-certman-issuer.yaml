@@ -1,0 +1,34 @@
+#
+# REFUND HUNTER CONFIDENTIAL
+# __________________________
+#
+#  [2017] - [2023] Refund Hunter
+#  All Rights Reserved.
+#
+# NOTICE: All information contained herein is, and remains the property of Refund Hunter and its
+# suppliers, if any.  The intellectual and technical concepts contained herein are proprietary to
+# Refund Hunter and its suppliers and may be covered by U.S. and Foreign Patents, patents in
+# process, and are protected by trade secret or copyright law. Dissemination of this information or
+# reproduction of this material is strictly forbidden unless prior written permission is obtained
+# from Refund Hunter.
+#
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+  namespace: {{ namespace }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ email }}
+    privateKeySecretRef:
+      name: letsencrypt
+    solvers:
+    - dns01:
+        route53:
+          region: {{ aws_region }}
+          accessKeyID: {{ aws_access_key_id }}
+          secretAccessKeySecretRef:
+            name: route53-credentials
+            key: key
