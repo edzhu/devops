@@ -25,7 +25,7 @@ helm repo update
 . ${dir}/../.modules/${ENV}/secret/aws.cfg
 kubectl create secret generic route53-credentials \
         --from-literal=key=${AWS_SECRET_ACCESS_KEY} \
-        --dry-run -o yaml |kubectl apply -f -
+        --dry-run -o yaml -n ${K8S_NAMESPACE} |kubectl apply -f -
 
 # Install or upgrade cert-manager
 name=cert-manager

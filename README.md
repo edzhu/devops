@@ -11,7 +11,7 @@ running. The infrastructure consists of four *public-cloud* hosted Kubernetes cl
      and configuration data, as well as running CI/CD pipelines.
    * `dev` control plane - development environment Kubernetes control plane for self managed nodes
      hosted at `dev.<DOMAIN_NAME>`
-   * `pre` control plane - QA environment Kubernetes control plane for self managed nodes hosted at
+   * `pre` control plane - QA environment Kubernetes control plane for self-managed nodes hosted at
      `pre.<DOMAIN_NAME>`
    * `prd` control plane - production environment Kubernetes control plane for self managed nodes
      hosted at `prd.<DOMAIN_NAME>`
@@ -24,20 +24,20 @@ Kubernetes clusters, one each for `dev`, `pre`, and `prd` environments. For thes
 clusters, the control plane runs as pods in the `ops` cluster, while worker nodes are either
 cloud-hosted VMs or physical machines added into the cluster via publicly accessible IP addresses.
 
-### Cluster Naming Scheme
-
 The name of each cluster follow the general schema `<DOMAIN_PREFIX><ENVIRONMENT><TYPE_SUFFIX>`.
 `<DOMAIN_PREFIX>` is shorthand for the domain, in the case of Refund Hunter it is `rh-`.
 `<ENVIRONMENT>` is one of `ops`, `dev`, `pre`, or `prd`. `<TYPE_SUFFIX>` is either `-sm` for
-self-managed cluster or empty string for cloud-hosted cluster.
+self-managed cluster or `-ch` for cloud-hosted cluster.
+
+### Configuration Data and Secrets
 
 The `<ENVIRONMENT>` name maps directly to a Git branch so that configuration data can be stored
 directly in Git repo. The configuration for each environment is stored in its own encrypted Git
 submodule, with unique decryption key for each environment. By convention, configuration submodules
-are not shared between parent repos. This create an additional layer of isolation to guard against
-code leaks.
+are not shared between source code repos. This creates an additional layer of isolation to guard
+against code leaks.
 
-Take this `devops` repo as an example, it has configuration for all four environments, which are
+Using this `devops` repo as an example, it has configuration for all four environments, which are
 stored as Git submodules under the `.modules` folder. To create a configuration submodule, first
 create an empty Git repo, then add it as a submodule under the `.modules` folder:
 

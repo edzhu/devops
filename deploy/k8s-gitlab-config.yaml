@@ -40,45 +40,89 @@ global:
     enabled: false
 
 gitlab:
+
   webservice:
     ingress:
       tls:
         secretName: {{ service_name }}--gitlab-tls
     minReplicas: 1
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
     resources:
       limits:
         cpu: 500m
         memory: 2Gi
-        ephemeral-storage: 0.5Gi
+        ephemeral-storage: 2Gi
       requests:
         cpu: 500m
         memory: 2Gi
-        ephemeral-storage: 0.5Gi
+        ephemeral-storage: 2Gi
     workhorse:
       resources:
         limits:
           cpu: 250m
           memory: 0.5Gi
-          ephemeral-storage: 0.5Gi
+          ephemeral-storage: 1Gi
         requests:
           cpu: 250m
           memory: 0.5Gi
-          ephemeral-storage: 0.5Gi
+          ephemeral-storage: 1Gi
+
   sidekiq:
     minReplicas: 1
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
     resources:
       limits:
         cpu: 500m
         memory: 2Gi
-        ephemeral-storage: 1Gi
+        ephemeral-storage: 2Gi
       requests:
         cpu: 500m
         memory: 2Gi
-        ephemeral-storage: 1Gi
+        ephemeral-storage: 2Gi
+
   gitlab-shell:
     minReplicas: 1
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+
   gitlab-exporter:
     enabled: false
+
   toolbox:
     enabled: true
     replicas: 1
@@ -101,26 +145,51 @@ gitlab:
         cpu: 250m
         memory: 0.5Gi
         ephemeral-storage: 1Gi
+
   migrations:
     init:
       resources:
         limits:
           cpu: 250m
           memory: 0.5Gi
-          ephemeral-storage: 0.5Gi
+          ephemeral-storage: 1Gi
         requests:
           cpu: 250m
           memory: 0.5Gi
-          ephemeral-storage: 0.5Gi
+          ephemeral-storage: 1Gi
     resources:
       limits:
         cpu: 1000m
         memory: 2Gi
-        ephemeral-storage: 0.5Gi
+        ephemeral-storage: 2Gi
       requests:
         cpu: 1000m
         memory: 2Gi
-        ephemeral-storage: 0.5Gi
+        ephemeral-storage: 2Gi
+
+  gitaly:
+    init:
+      resources:
+        limits:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+        requests:
+          cpu: 250m
+          memory: 0.5Gi
+          ephemeral-storage: 1Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+    persistence:
+      storageClass: regional-ssd
+      size: 10Gi
 
 minio:
   persistence:
@@ -150,15 +219,39 @@ minio:
       ephemeral-storage: 1Gi
 
 redis:
-  resources:
-    limits:
-      cpu: 250m
-      memory: 0.5Gi
-      ephemeral-storage: 1Gi
-    requests:
-      cpu: 250m
-      memory: 0.5Gi
-      ephemeral-storage: 1Gi
+  metrics:
+    enabled: false
+  master:
+    persistence:
+      storageClass: regional-ssd
+      size: 2Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+
+postgresql:
+  metrics:
+    enabled: false
+  primary:
+    persistence:
+      storageClass: regional-ssd
+      size: 2Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      requests:
+        cpu: 250m
+        memory: 0.5Gi
+        ephemeral-storage: 1Gi
+      
 
 registry:
   ingress:

@@ -58,12 +58,23 @@ clean:
 	@find . -name '*.egg-info' -type f -delete
 	@find . -name '*~' -type f -delete
 
+.PHONY: gcloud-auth
+gcloud-auth:
+	@gcloud container clusters get-credentials $(K8S_CLUSTER) \
+		--location $(GCLOUD_LOCATION) --project $(GCLOUD_PROJECT)
+
+.PHONY: kub
+kub: gcloud-auth
+	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl config set-context $(shell kubectl config current-context) --namespace=$(K8S_NAMESPACE)
+
 .PHONY: deploy
 deploy:
 	@deploy/deploy.sh
 
 .PHONY: shutdown
 shutdown:
+	@deploy/k8s-gitlab-destroy.sh
 	@deploy/k8s-certman-destroy.sh
 	@deploy/k8s-nginx-destroy.sh
 

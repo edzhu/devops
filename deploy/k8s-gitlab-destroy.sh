@@ -16,6 +16,6 @@
 
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-# Delete nginx-ingress via helm
-name=ingress-nginx
+# Delete gitlab via helm
+name=gitlab
 helm --namespace ${K8S_NAMESPACE} delete ${name} || true

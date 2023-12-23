@@ -1,4 +1,4 @@
-#!/bin/bash -xe
+#!/bin/bash -e
 #
 # REFUND HUNTER CONFIDENTIAL
 # __________________________
@@ -16,31 +16,62 @@
 
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-# Create service account for Terraform
-sa_path="projects/${GCLOUD_PROJECT}/serviceAccounts/terraform@${GCLOUD_PROJECT}.iam.gserviceaccount.com"
-sa_id=$(gcloud --format=json iam --project ${GCLOUD_PROJECT} service-accounts list |jq -r '.[] |select(.name=="'${sa_path}'") |.uniqueId')
-if [ -z "${sa_id}" ]; then
-    sa_id=$(gcloud --format=json iam --project ${GCLOUD_PROJECT} service-accounts create terraform |jq -r '.uniqueId')
+sa_name=$1
+sa_email="${sa_name}@${GCLOUD_PROJECT}.iam.gserviceaccount.com"
+sa_path="projects/${GCLOUD_PROJECT}/serviceAccounts/${sa_email}"
+
+# Activate service account if it's already authenticated
+is_sa_authed=$(gcloud auth list --format json 2> /dev/null |jq -r '.[] |select(.account=="'${sa_email}'")')
+if [ -n "${is_sa_authed}" ]; then
+    is_sa_active=$(gcloud auth list --format json 2> /dev/null |jq -r '.[] |select(.account=="'${sa_email}'") |select(.status=="ACTIVE")')
+    if [ -n "${is_sa_active}" ]; then
+        echo "GCloud service account ${sa_name} already activated"
+    else
+        gcloud config set account ${sa_email}
+        echo "GCloud service account ${sa_name} activated"
+    fi
+    exit 0
 fi
 
-# Create and download key for service account
-sa_key_file="${dir}/../.modules/${ENV}/secret/terraform_key.json"
-sa_key_id=$(jq -r '.private_key_id' ${sa_key_file} || true)
-if [ -n "${sa_key_id}" ]; then
-    sa_key_id=$(gcloud --format=json iam --project ${GCLOUD_PROJECT} service-accounts keys list --iam-account ${sa_id} |jq -r '.[] |select(.name=="'${sa_path}/keys/${sa_key_id}'") |.name' |awk -F/ '{print $NF}' || true)
+# Create service account if it does not exist
+sa_id=$(gcloud --format json iam --project ${GCLOUD_PROJECT} service-accounts list |jq -r '.[] |select(.name=="'${sa_path}'") |select(.disabled==false) |.uniqueId')
+if [ -z "${sa_id}" ]; then
+    echo "GCloud service account ${sa_name} not found, creating..."
+    sa_id=$(gcloud --format json iam --project ${GCLOUD_PROJECT} service-accounts create ${sa_name} |jq -r '.uniqueId')
+    echo "GCloud service account ${sa_name} created with ID ${sa_id}"
 fi
+
+# Create service account private access key if one does not already exist
+sa_key_file="${dir}/../.modules/${ENV}/secret/${sa_name}_key.json"
+if ! [ -f "${sa_key_file}" ]; then
+    echo "Service account ${sa_name} private access key file not found, creating..."
+    gcloud --format json iam --project ${GCLOUD_PROJECT} service-accounts keys create ${sa_key_file} --iam-account ${sa_id}
+fi
+
+# Verify private key is associated with the service account
+sa_key_id=$(jq -r 'select(.client_email=="'${sa_email}'") |.private_key_id |select(type=="string")' ${sa_key_file} 2> /dev/null || true)
 if [ -z "${sa_key_id}" ]; then
-    gcloud --format=json iam --project ${GCLOUD_PROJECT} service-accounts keys create ${sa_key_file} --iam-account ${sa_id}
+    echo "Unable to extract private key ID from file: ${sa_key_file}"
+    echo "Delete this file and re-run to create new private key."
+    exit 1
+fi
+
+# Verify private key is still active in the service account
+sa_key_name=$(gcloud --format json iam --project ${GCLOUD_PROJECT} service-accounts keys list --iam-account ${sa_id} |jq -r '.[] |select(.name=="'${sa_path}/keys/${sa_key_id}'") |.name')
+if [ -z "${sa_key_name}" ]; then
+    echo "GCloud service account ${sa_name} private access key ${sa_key_id} not found!!!"
+    echo "Delete private key file (${sa_key_file}) and re-run to create new private key."
+    exit 2
 fi
 
 # Add cluster management permissions to service account
-sa_name="serviceAccount:terraform@${GCLOUD_PROJECT}.iam.gserviceaccount.com"
-is_authorized=$(gcloud --format=json projects get-iam-policy ${GCLOUD_PROJECT} |jq -r '.bindings.[] |select(.role=="roles/container.serviceAgent") |.members.[]' |grep ${sa_name} || true)
-if [ -z "${is_authorized}" ]; then
-    is_authorized=$(gcloud projects add-iam-policy-binding ${GCLOUD_PROJECT} --member ${sa_name} --role roles/container.serviceAgent |jq -r '.bindings.[] |select(.role=="roles/container.serviceAgent") |.members.[]' |grep ${sa_name})
-    if [ -z "${is_authorized}" ]; then
-        echo "Failed to bind container.serviceAgent role to ${sa_name}"
-        exit 1
+sa_member="serviceAccount:${sa_email}"
+is_authed=$(gcloud --format json projects get-iam-policy ${GCLOUD_PROJECT} |jq -r '.bindings.[] |select(.role=="roles/container.serviceAgent") |.members.[] |select(index("'${sa_member}'"))' || true)
+if [ -z "${is_authed}" ]; then
+    is_authed=$(gcloud projects add-iam-policy-binding ${GCLOUD_PROJECT} --member ${sa_member} --role roles/container.serviceAgent |jq -r '.bindings.[] |select(.role=="roles/container.serviceAgent") |.members.[] |select(index("'${sa_member}'"))')
+    if [ -z "${is_authed}" ]; then
+        echo "Failed to bind container.serviceAgent role to ${sa_member}!!!"
+        exit 3
     fi
 fi
 

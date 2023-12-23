@@ -16,15 +16,30 @@
 
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-# Check correct version of Helm is installed
-HELM_MIN_VERSION=3
-helm_version=$(helm version |awk -Fv '{print $3}' |awk -F. '{print $1}')
-if [ ${helm_version} -lt ${HELM_MIN_VERSION} ]; then
-    if [[ "${OSTYPE}" == "linux"* ]]; then
+# Get latest version of Helm
+latest_version=$(curl -s https://get.helm.sh/helm-latest-version)
+if [ -z "${latest_version}" ]; then
+    echo "Unable to fetch latest version of Helm!!!"
+    exit 1
+fi
+
+# See if installed version match or is later than latest version
+installed_version=$(helm version --template '{{.Version}}' 2> /dev/null || true)
+target_version=$(echo -e "${installed_version}\n${latest_version}" |sort --version-sort |tail -n 1)
+if [ -z "${target_version}" ]; then
+    echo "Unable to determine target version of Helm!!!"
+    exit 1
+fi
+if [ "${installed_version}" != "${target_version}" ]; then
+    echo "Upgrading Helm to latest release ${latest_version}..."
+    if [ -z ${SKIP_HELM_UPGRADE+x} ]; then
+        echo "Skipping Helm upgrade due to env flag!"
+    elif [[ "${OSTYPE}" == "linux"* ]]; then
         curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | sudo bash
     else
-        echo "Helm version ${GCLOUD_MIN_VERSION} or greater is required!!!"
-        echo "See instruction at https://helm.sh/docs/intro/install/"
+        echo "Unsupported OS type <${OSTYPE}>, unable to automatically install Helm."
+        echo "See Helm installation instructions at https://helm.sh/docs/intro/install/"
+        echo "Set enviroment variable SKIP_HELM_UPGRADE to skip upgrade."
         exit 1
     fi
 fi

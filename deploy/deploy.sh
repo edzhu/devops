@@ -16,7 +16,9 @@
 
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-${dir}/install-gcloud.sh
+SA_NAME=terraform
+
+${dir}/install-gcloud.sh ${SA_NAME}
 
 # Enable GCloud API Endpoints
 gcloud services --project ${GCLOUD_PROJECT} enable iam.googleapis.com
