@@ -16,29 +16,55 @@
 
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-sa_name=$1
+SA_NAME="terraform"
+
+usage() {
+    echo "Usage: $0 [-s] [-a <service-account>]"
+    echo "  -s: Skip GCloud upgrade"
+    echo "  -a: Service account name, default to <${SA_NAME}>"
+    exit 1
+}
+
+while getopts ":sa:" opt; do
+    case $opt in
+        s)
+            SKIP_GCLOUD_UPGRADE=1
+            ;;
+        a)
+            SA_NAME=$OPTARG
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            usage
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument." >&2
+            usage
+            ;;
+    esac
+done
 
 # Get the latest version of GCloud
 latest_version=$(gcloud components list --format json 2> /dev/null |jq -r '.[] |select(.id=="core") |.latest_version_string |select(type=="string")')
 if [ -z "${latest_version}" ]; then
-    echo "Unable to determine locally installed GCloud version!!!"
+    echo "ERROR: Unable to determine locally installed GCloud version!!!"
     echo "See install instructions at https://cloud.google.com/sdk/docs/install-sdk"
     exit 1
 fi
 echo "Detected latest GCloud CLI version is <${latest_version}>"
 
-# Upgrade GCloud to latest version is needed
+# Upgrade GCloud to latest version if installed version is earlier than latest
 installed_version=$(gcloud components list --format json 2> /dev/null |jq -r '.[] |select(.id=="core") |.current_version_string |select(type=="string")')
 echo "Detected installed GCloud CLI version is <${installed_version}>"
 target_version=$(echo -e "${installed_version}\n${latest_version}" |sort --version-sort |tail -n 1)
 if [ -z "${target_version}" ]; then
-    echo "Unable to determine target version of GCloud!!!"
+    echo "ERROR: Unable to determine target version of GCloud!!!"
     exit 1
 fi
 if [ "${installed_version}" != "${target_version}" ]; then
     echo "Upgrading GCloud from ${installed_version} to target release ${target_version}..."
     if [ -z ${SKIP_GCLOUD_UPGRADE+x} ]; then
-        gcloud components update
+        gcloud -q components update
         version=$(gcloud components list --format json 2> /dev/null |jq -r '.[] |select(.id=="core") |.current_version_string |select(type=="string")')
         echo "GCloud upgraded to release ${version}"
     else
@@ -59,13 +85,15 @@ fi
 is_authed=$(gcloud auth list --format json 2> /dev/null |jq -r '.[] |select(.status=="ACTIVE") |.account')
 if [ -z "${is_authed}" ]; then
     # Authorize with service account if private key file exists
-    sa_key_file="${dir}/../.modules/${ENV}/secret/${sa_name}_key.json"
+    sa_key_file="${dir}/../.modules/${ENV}/secret/${SA_NAME}_key.json"
     if [ -f "${sa_key_file}" ]; then
         gcloud auth activate-service-account --key-file="${sa_key_file}"
-        echo "Authorized with "
+        echo "Authorized with service account <${SA_NAME}>."
     else
-        echo "  >> Authorizing user account..."
+        echo ">>> Authorizing user account..."
         gcloud auth login --no-launch-browser
-        echo "  << User account authorized."
+        echo "<<< User account authorized."
     fi
+    is_authed=$(gcloud auth list --format json 2> /dev/null |jq -r '.[] |select(.status=="ACTIVE") |.account')
 fi
+echo "Authorized GCloud account is <${is_authed}>"

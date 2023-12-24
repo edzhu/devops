@@ -25,7 +25,7 @@ ifeq ($(ENV), ops)
 else ifeq ($(ENV), prd)
 	export GCLOUD_LOCATION ?= us-central1-c  # zonal cluster
 
-else ifeq ($(ENV), pre)
+else ifeq ($(ENV), tst)
 	export GCLOUD_LOCATION ?= us-central1-f  # zonal cluster
 
 else
