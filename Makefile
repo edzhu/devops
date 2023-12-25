@@ -16,21 +16,21 @@ pull:
 
 export DOMAIN_PREFIX ?= rh-
 export ENV ?= $(shell git rev-parse --abbrev-ref HEAD | awk -F- '{print $$1}')
-export GIT_DOMAIN ?= github.com
+export GIT_DOMAIN ?= 'github.com:edzhu'
 export GIT_USER ?= ${USER}
 
-ifeq ($(ENV), ops)
-	export GCLOUD_LOCATION ?= us-central1  # regional cluster
+ifeq ($(ENV), ops) # regional cluster
+	export GCLOUD_LOCATION ?= us-central1
 
-else ifeq ($(ENV), prd)
-	export GCLOUD_LOCATION ?= us-central1-c  # zonal cluster
+else ifeq ($(ENV), prd) # zonal cluster
+	export GCLOUD_LOCATION ?= us-central1-c
 
-else ifeq ($(ENV), tst)
-	export GCLOUD_LOCATION ?= us-central1-f  # zonal cluster
+else ifeq ($(ENV), tst) # zonal cluster
+	export GCLOUD_LOCATION ?= us-central1-f
 
-else
+else # zonal cluster
 	export ENV = dev
-	export GCLOUD_LOCATION ?= us-central1-b  # zonal cluster
+	export GCLOUD_LOCATION ?= us-central1-b
 endif
 
 export GIT_SUFFIX ?= $(shell git rev-parse --abbrev-ref HEAD | awk -F- '{print $$2}' | sed 's|\([0-9]\)|-\1|')

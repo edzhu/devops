@@ -17,21 +17,33 @@
 dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 SA_NAME="terraform"
+required_services=(
+    "compute.googleapis.com"
+    "container.googleapis.com"
+    "containerregistry.googleapis.com"
+    "iam.googleapis.com"
+    "cloudbuild.googleapis.com"
+    "cloudresourcemanager.googleapis.com"
+)
 
 usage() {
-    echo "Usage: $0 [-s] [-a <service-account>]"
+    echo "Usage: $0 [-s] [-a <service-account>] [-p <project>]"
     echo "  -s: Skip GCloud upgrade"
     echo "  -a: Service account name, default to <${SA_NAME}>"
+    echo "  -p: Optional GCloud project name, if set will enable required services in the project"
     exit 1
 }
 
-while getopts ":sa:" opt; do
+while getopts ":sa:p:" opt; do
     case $opt in
         s)
             SKIP_GCLOUD_UPGRADE=1
             ;;
         a)
             SA_NAME=$OPTARG
+            ;;
+        p)
+            gcloud_project=$OPTARG
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -97,3 +109,29 @@ if [ -z "${is_authed}" ]; then
     is_authed=$(gcloud auth list --format json 2> /dev/null |jq -r '.[] |select(.status=="ACTIVE") |.account')
 fi
 echo "Authorized GCloud account is <${is_authed}>"
+
+# Perform project specific action if GCloud project is specified
+if [ -n "${gcloud_project}" ]; then
+
+    # Make sure GCLoud project is valid
+    is_valid=$(gcloud projects list --format json 2> /dev/null |jq -r '.[] |select(.projectId=="'"${gcloud_project}"'") |.projectId')
+    if [ -z "${is_valid}" ]; then
+        echo "ERROR: Invalid GCloud project <${gcloud_project}>!!!"
+        exit 1
+    fi
+
+    # Get the list of services already enabled in the GCloud project
+    enabled_services=$(gcloud services list --project "${gcloud_project}" --format json 2> /dev/null |jq -r '.[] |select(.state=="ENABLED") |.config.name')
+
+    # Enable required services in GCloud project
+    for service in "${required_services[@]}"; do
+        is_enabled=$(echo "${enabled_services}" |grep -i "${service}" || true)
+        if [ -z "${is_enabled}" ]; then
+            echo "Enabling GCloud service <${service}> in project <${gcloud_project}>..."
+            gcloud services --project "${gcloud_project}" enable "${service}"
+        else
+            echo "GCloud service <${service}> already enabled in project <${gcloud_project}>."
+        fi
+    done
+
+fi
