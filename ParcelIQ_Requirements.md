@@ -1,4 +1,6 @@
-# ParcelIQ — Detailed Requirements (v1)
+# ParcelIQ — Detailed Requirements (v2)
+
+> **Update (v2):** ParcelIQ MUST use the **Sentinel** repository as its centralized AuthN/AuthZ/audit platform.
 
 ## 0) Overview
 ParcelIQ is a carrier-management and shipping-orchestration service that connects to multiple carriers (e.g., FedEx, UPS, USPS, Amazon Shipping, and others) and provides:
@@ -17,6 +19,7 @@ ParcelIQ is a carrier-management and shipping-orchestration service that connect
 - Deterministic, auditable pricing
 - Extensible routing rules
 - Ledger-based billing and full traceability
+- **Centralized security controls via Sentinel** (AuthN, AuthZ with Cedar, auditing, rate limiting, request signing)
 
 ---
 
@@ -32,6 +35,12 @@ ParcelIQ is a carrier-management and shipping-orchestration service that connect
 - **Transaction / Ledger Entry**: A financial record of charges, refunds, adjustments, and payments.
 - **Carrier Invoice**: The carrier’s billed statement that may include adjustments after shipment is billed.
 - **Claim**: A dispute process with a carrier (unknown shipment, undelivered, incorrect rating, etc.).
+- **Tenant / Account (Tenant)**: The top-level organizational boundary in ParcelIQ. All users, API keys, carrier accounts, and shipments are scoped to a tenant.
+- **Principal**: The identity requesting an operation (a **user** or a **service principal/API key**), represented as a Sentinel principal (e.g., `User::"u_123"` or `Service::"svc_abc"`).
+- **Action**: A stable Sentinel action identifier (e.g., `read`, `create_shipment`, `purchase_label`, `void_label`, `manage_billing`) used for authorization checks.
+- **Resource**: A stable Sentinel resource identifier (Cedar `EntityUid`) such as `Shipment::"shp_123"` or `CarrierAccount::"ca_456"`.
+- **Role / Permission**: Tenant-scoped access rights expressed and enforced via Sentinel Cedar policies (roles may be implemented as groups/relationships + policy rules).
+- **Sentinel**: The required security platform repository that provides centralized **AuthN**, **AuthZ** (Cedar), **audit/event emission**, **rate limiting**, **request signing**, and **security-state enforcement**.
 
 ---
 
@@ -39,14 +48,74 @@ ParcelIQ is a carrier-management and shipping-orchestration service that connect
 
 ### 2.1 General API Requirements
 - **API style**: Versioned REST API with consistent, carrier-agnostic resource shapes (e.g., `Address`, `Parcel`, `Shipment`, `Rate`, `Tracker`, `Batch`, etc.).
-- **Auth**: API keys per user account; support scoped keys (read-only, shipping-only, billing-only, admin).
+- **AuthN (Sentinel)**: ParcelIQ MUST authenticate requests using **Sentinel-issued bearer tokens** (user tokens for human/UIs and service tokens for integrations). ParcelIQ MAY expose "API keys" to customers, but these MUST map to **Sentinel service principals/tokens** and be revocable/rotatable.
+- **AuthZ (Sentinel/Cedar)**: Every protected operation MUST be authorized via **Sentinel** using the tuple `(principal, action, resource, context)` (typically by calling `POST /v1/authorize` or embedding Sentinel PEP middleware with equivalent semantics). Authorization MUST be **fail-closed**.
+- **Correlation IDs (Sentinel-aligned)**: ParcelIQ MUST accept or generate `X-Request-Id` and MUST propagate a correlation identifier (e.g., `X-Correlation-Id`, defaulting to `X-Request-Id`) to all logs, downstream calls, webhooks, and Sentinel events.
 - **Idempotency**: All write endpoints MUST support an `Idempotency-Key` to prevent duplicate labels/charges.
 - **Pagination & filtering**: Standard query params for list endpoints; stable sorting.
-- **Rate limiting**: Enforce request throttling at the *user account* level. Rate limits MUST be configurable per user (and optionally per API key scope), with clear 429 responses and retry guidance.
+- **Rate limiting (Sentinel)**: Enforce request throttling using Sentinel’s rate-limiting framework (Redis-backed in production). Limits MUST be configurable per tenant and per principal (user/service/API key), and MAY vary by endpoint/action. Responses MUST include clear `429` errors and SHOULD include `Retry-After` guidance.
 - **Async processing**: Some operations MUST be modeled as asynchronous (e.g., batch operations) and expose status polling + webhook completion events.
 - **Webhooks**: First-class webhook configuration, signed delivery support (e.g., HMAC), retry strategy, and event types covering all major object state changes (shipments, trackers, batches, claims, billing adjustments).
 - **Error model**: Structured errors with machine-readable codes, human messages, and field-level validation errors.
 - **Auditability**: Every pricing-affecting response MUST include a detailed breakdown and references to the rules/versions used.
+
+### 2.1.1 Sentinel-based Identity, Permissions, and Enforcement (Required)
+
+ParcelIQ MUST use the uploaded **Sentinel** repository as its **single** system of record and enforcement for:
+- **User authentication (AuthN)** via OIDC Authorization Code + PKCE (handled by Sentinel’s `/v1/auth/*` + `/v1/token` flows).
+- **Token issuance and refresh**, using Sentinel’s token service (user tokens and service tokens).
+- **Authorization (AuthZ)** using **Cedar** policies evaluated by Sentinel’s PDP, invoked through Sentinel’s PEP `POST /v1/authorize`.
+- **Permission / role management** via Cedar entity relationships (users, groups/roles, tenants, and ParcelIQ resources).
+- **Immutable audit events** for all AuthN and AuthZ decisions, plus high-sensitivity ParcelIQ domain events.
+- **Security enforcement state** (e.g., quarantined/blocked/step-up-required) applied before policy evaluation (deny-by-default where configured).
+
+#### A) Authentication requirements
+- ParcelIQ MUST accept `Authorization: Bearer <token>` where the token is issued by Sentinel.
+- ParcelIQ MUST support both:
+  - **User tokens** for interactive experiences (dashboard/admin UI).
+  - **Service tokens / API keys** for programmatic integrations (marketplaces, OMS/WMS, shipping automation).
+- Tokens MUST be revocable (e.g., session invalidation / refresh token revocation) and MUST have configurable TTLs.
+
+#### B) Authorization requirements (Cedar + `/authorize`)
+- For every request that reads or mutates tenant data, ParcelIQ MUST compute:
+  - `principal` (user or service principal)
+  - `action` (stable action id)
+  - `resource` (Cedar `EntityUid`, e.g., `Shipment::"shp_123"`)
+  - `context` (service name, correlation id, request metadata, and business parameters needed for ABAC)
+- ParcelIQ MUST call Sentinel `POST /v1/authorize` (or equivalent embedded PEP), and MUST enforce:
+  - **DENY-by-default** on Sentinel unavailability/timeouts for protected actions.
+  - **Fail-closed** on unmapped operations or missing resource-id extraction (see Resource Registry below).
+  - Consistent mapping of HTTP routes → `(action, resource_type, id extraction)`.
+
+#### C) Resource Registry mapping (Sentinel `resources/` integration)
+ParcelIQ MUST define and maintain Sentinel Resource Registry mappings for all externally exposed API operations, at:
+- `sentinel/resources/services/parceliq-api.yaml` (or equivalent service name)
+
+Requirements:
+- Every externally reachable route/operation MUST have a mapping.
+- On startup, ParcelIQ MUST validate mappings and MUST refuse to start (or deny all) if any protected operation is unmapped.
+- Extraction MUST use Sentinel’s supported extractors (`path`, `query`, `header`, `json_body`, `constant`, or `custom` with a provided resolver).
+- If the mapping exists but extraction fails at runtime, ParcelIQ MUST treat the request as **not authorized** (fail closed).
+
+#### D) Default permission model (minimum required roles)
+ParcelIQ MUST ship with a default tenant-scoped role model (implemented as Cedar entities/edges + policies), at minimum:
+- **Owner**: full access including billing, carrier credentials, and security administration.
+- **Admin**: manage users/roles, carrier accounts, routing policies, virtual services, webhooks.
+- **Shipping Operator**: create/rate/purchase/void/track shipments, manage batches/manifests/pickups.
+- **Billing Operator**: invoices, ledger, reconciliation, claims outcomes/adjustments.
+- **Developer / Integrator**: manage API keys, webhooks, and view logs/audit for integrations.
+- **Read-only**: view-only access for reporting and audit.
+
+Policies MUST be expressed in Cedar and promoted via an auditable workflow.
+
+#### E) Audit and security event emission (Sentinel pipeline)
+ParcelIQ MUST emit (directly or via Sentinel `/v1/events`) structured security-relevant events, including:
+- Authentication events (login, logout, token refresh failures)
+- Authorization outcomes (allow/deny with `deny_reason` / `error_code`)
+- High-risk business actions (label purchases, refunds/voids, reroutes/redirects, carrier credential changes, billing adjustments, API key creation/rotation)
+
+Events MUST include `request_id` / `correlation_id`, tenant id, principal id, and the affected resource ids.
+
 
 ### 2.2 Core Endpoints / Capabilities (Expanded)
 ParcelIQ MUST provide the following operations in a carrier-agnostic manner. Where a carrier does not support a capability, ParcelIQ MUST return a clear `unsupported_feature` error code and (where possible) guidance on alternatives.
@@ -400,13 +469,25 @@ Claims MUST be followable “until completion” with full status history and fi
   - If one carrier is down, routing policies can exclude it and continue with others.
 
 ### 10.2 Security and Compliance
+- **Sentinel required**: ParcelIQ MUST integrate with the Sentinel repository for AuthN/AuthZ, auditing, rate limiting, request signing, and security-state enforcement.
 - Encrypt credentials and sensitive PII at rest and in transit.
-- Fine-grained access control (roles/scopes).
-- Audit logs for:
-  - Credential changes
-  - Rate table changes
-  - Routing policy changes
-  - Financial ledger changes
+- **AuthN**: Sentinel-issued bearer tokens for users and service principals; token lifetimes, refresh, and revocation MUST be supported.
+- **AuthZ (Cedar)**: Fine-grained access control MUST be enforced via Sentinel Cedar policies and `/v1/authorize` checks using `(principal, action, resource, context)`.
+- **Fail-closed posture**:
+  - If Sentinel authorization cannot be evaluated for a protected action (PDP timeout/unavailable, invalid mapping, missing resource id), ParcelIQ MUST deny the request.
+  - If Sentinel security-state indicates `QUARANTINED` or `BLOCKED`, ParcelIQ MUST deny the request regardless of policy.
+- **Request signing & replay protection**:
+  - Internal service-to-service calls that are security sensitive (including calls to Sentinel `/authorize` in service mode and `/events`) MUST use Sentinel’s request signing scheme and MUST enforce replay protection (nonce + timestamp).
+- **Auditing (immutable)**:
+  - ParcelIQ MUST produce audit logs for all high-risk changes and MUST ensure Sentinel audit events capture: `request_id`, `correlation_id`, principal, tenant, action, resource, decision, and decision metadata when available.
+  - Minimum audited actions include:
+    - Carrier credential create/update/disable
+    - API key/service principal create/rotate/revoke
+    - Rate table changes and account-level rate adjustment changes
+    - Routing policy and virtual service changes
+    - Shipment label purchase, void/refund, reroute/intercept
+    - Ledger and invoice adjustments
+    - Claims workflow state changes and payouts/credits
 - PII handling policies (data minimization, retention rules, export/delete support where applicable).
 
 ### 10.3 Observability
@@ -439,6 +520,83 @@ Claims MUST be followable “until completion” with full status history and fi
   - Provide admin/configuration controls for archival thresholds, migration schedules, and rehydration limits.
   - Provide metrics and alerts for archival backlog, hydration latency, and storage utilization.
 
+### 10.6 Sentinel Repository Adoption and Integration Requirements
+
+ParcelIQ MUST adopt the uploaded Sentinel repository as a **required runtime dependency** and MUST NOT re-implement equivalent security functionality in ParcelIQ itself.
+
+#### 10.6.1 Repository usage and packaging
+- ParcelIQ MUST consume Sentinel as:
+  - A pinned dependency (package + version) **or**
+  - A vendored module/submodule with an explicit upgrade process.
+- ParcelIQ MUST maintain environment-specific Sentinel inputs alongside the application:
+  - `policies/env/<env>/policies/**` (Cedar policies for ParcelIQ)
+  - `entities/env/<env>/entities.json` (Cedar entities snapshot inputs or export pipeline)
+  - `resources/registry.yaml` and `resources/services/parceliq-api.yaml` (resource + action registry and operation mappings)
+
+#### 10.6.2 Required Sentinel capabilities to use
+ParcelIQ MUST use the following Sentinel-provided capabilities:
+
+1) **AuthN (OIDC login)**
+- Any ParcelIQ UI (admin console, billing console, ops console) MUST use Sentinel’s OIDC login flow (`/v1/auth/login/*` and `/v1/auth/callback/*`).
+- ParcelIQ MUST treat Sentinel as the issuer of tokens and the source of stable internal user ids.
+
+2) **Token service**
+- ParcelIQ MUST use Sentinel’s token service (`POST /v1/token`) for:
+  - User token issuance/refresh
+  - Service principal token issuance (client credentials) for integrations
+- ParcelIQ MUST support service principal lifecycle: create, rotate, revoke (backed by Sentinel storage).
+
+3) **Authorization (Cedar via `/v1/authorize`)**
+- All ParcelIQ protected operations MUST be mapped to Sentinel actions and resources.
+- ParcelIQ MUST include sufficient ABAC context for policies, including at minimum:
+  - `service_name`, `correlation_id`
+  - request metadata (ip, user_agent when available)
+  - tenant id and relevant business fields (e.g., shipping origin/destination country, declared value, carrier, amount)
+
+4) **Resource registry “match → extract → authorize” workflow**
+- ParcelIQ MUST use Sentinel’s resource registry mapping approach so that authorization is consistent and centrally reviewable.
+- Unmapped routes MUST fail closed.
+
+5) **Rate limiting**
+- ParcelIQ MUST implement rate limiting using Sentinel’s primitives and shared backing store (Redis in production).
+- Rate limits MUST be configurable per tenant and per principal, and MUST support burst + sustained rules.
+
+6) **Audit/event pipeline**
+- ParcelIQ MUST emit Sentinel-compatible audit events for all AuthN/AuthZ decisions and all high-risk ParcelIQ domain events.
+- When Kafka is unavailable, ParcelIQ MUST use a durable fallback (e.g., outbox pattern) consistent with Sentinel patterns.
+
+7) **Security state enforcement**
+- ParcelIQ MUST integrate with Sentinel `user_security_state` gating for protected actions:
+  - QUARANTINED/BLOCKED ⇒ deny
+  - STEP_UP_REQUIRED/PENDING_ADMIN_REVIEW ⇒ deny for protected actions, with explainable error codes
+- ParcelIQ MUST expose a user-facing error shape that can surface “account quarantined” or “step-up required” without leaking sensitive detection details.
+
+8) **Admin actions integration**
+- ParcelIQ operational tooling MUST integrate with Sentinel admin actions for:
+  - Listing/acknowledging alerts
+  - Quarantining/unquarantining users (or service principals) where supported
+- Admin actions MUST require elevated privileges and SHOULD require step-up/MFA or break-glass.
+
+#### 10.6.3 ParcelIQ authorization model (resources + actions)
+ParcelIQ MUST define a stable set of Sentinel resource types and actions. Minimum required resource types include:
+- `Tenant`, `User`, `Service` (service principal / API key)
+- `CarrierAccount`, `CarrierCredential`
+- `Shipment`, `RateQuote`, `Label`, `Tracker`, `Batch`, `Manifest`, `Pickup`
+- `VirtualService`, `RoutingPolicy`
+- `Invoice`, `LedgerEntry`, `ReconciliationRun`, `Claim`
+- `WebhookEndpoint`, `ReportExport`
+
+Minimum required action families include:
+- Read/list: `read`, `list`, `export`
+- Shipping: `create_shipment`, `rate_shipment`, `purchase_label`, `void_label`, `reroute_shipment`, `create_return`, `schedule_pickup`, `create_manifest`, `batch_purchase`
+- Billing: `manage_billing`, `create_invoice`, `adjust_ledger`, `run_reconciliation`
+- Admin/security: `manage_users`, `manage_roles`, `manage_api_keys`, `manage_carriers`, `manage_policies`
+
+#### 10.6.4 Migration and compatibility
+- Existing ParcelIQ API key patterns (if any) MUST be migrated to Sentinel-backed service principals without breaking external integrations.
+- ParcelIQ MUST provide an explicit migration plan and tooling for rotating keys/tokens with minimal downtime.
+
+
 ---
 
 ## 11) Acceptance Criteria (High-Level)
@@ -449,3 +607,4 @@ ParcelIQ is considered compliant with these requirements when:
 - Virtual services can be created, priced, and fulfilled through flexible routing policies with explainable decisions.
 - Billing prevents overspend beyond balance + credit, and invoices can be generated for any period.
 - Carrier invoices can be ingested, matched, and reconciled, and claims can be tracked through completion with ledger outcomes.
+- Sentinel is integrated end-to-end: all protected operations are authorized via Sentinel/Cedar with fail-closed behavior, and security/audit events are emitted with correlation IDs.
